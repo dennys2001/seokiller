@@ -11,8 +11,8 @@ export default function App() {
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
 
-  // CONFIGURE AQUI A URL DO SEU ENGINE
-  const ENGINE_URL = 'http://localhost:3001/avalie'; // Altere para a URL do seu engine
+  // Engine URL via Vite env (fallback to localhost)
+  const ENGINE_URL = import.meta.env.VITE_ENGINE_URL ?? 'http://localhost:3001/avalie';
 
   const handleSubmit = async () => {
     if (!url.trim()) {
