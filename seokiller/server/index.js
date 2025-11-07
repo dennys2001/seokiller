@@ -1,51 +1,79 @@
-const express = require("express");
-const cors = require("cors");
+require('dotenv').config();
+
+const express = require('express');
+const cors = require('cors');
+// Ensure fetch exists on older Node versions
+const fetch = global.fetch || require('node-fetch');
 
 const app = express();
 
-app.use(cors());
 app.use(express.json());
 
-// Essa é a rota chamada pelo front
-app.post("/avalie", async (req, res) => {
-  try {
-    // 1. Pega a URL enviada pelo front
-    const { url } = req.body;
-    if (!url) {
-      return res.status(400).json({ status: "error", message: "Campo 'url' é obrigatório" });
-    }
+// CORS: allow only configured origins (or '*')
+const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
 
-    // 2. Chama a engine SEO, passando a URL recebida
-    const ENGINE_URL = "http://localhost:5000/analyze"; // substitui pelo endpoint da tua engine
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow when '*' is set, or exact origin match; otherwise block
+    if (!origin) return callback(null, allowedOrigins.includes('*'));
+    const allowed = allowedOrigins.includes('*') || allowedOrigins.includes(origin);
+    if (!allowed) {
+      console.warn(`[middleware] CORS blocked origin: ${origin}`);
+    }
+    return callback(null, allowed);
+  },
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: false,
+  optionsSuccessStatus: 204,
+};
+
+// Apply CORS and handle preflight for specific routes (Express 5 disallows '*')
+app.use(cors(corsOptions));
+app.options('/avalie', cors(corsOptions));
+
+const PORT = parseInt(process.env.PORT, 10) || 3001;
+const ENGINE_URL = process.env.ENGINE_URL || 'http://localhost:5000/analyze';
+
+// Proxy route called by the frontend
+app.post('/avalie', async (req, res) => {
+  try {
+    const { url } = req.body || {};
+    if (!url) {
+      return res
+        .status(400)
+        .json({ status: 'error', message: "Campo 'url' é obrigatório" });
+    }
+    console.log(`[middleware] Receiving URL to analyze: ${url}`);
+    console.log(`[middleware] Forwarding to engine: ${ENGINE_URL}`);
 
     const response = await fetch(ENGINE_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url }) // manda o mesmo formato que o front te mandou
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
     });
 
     if (!response.ok) {
-      throw new Error(`Erro ao chamar a engine SEO: ${response.status} ${response.statusText}`);
+      throw new Error(
+        `Erro ao chamar a engine SEO: ${response.status} ${response.statusText}`
+      );
     }
 
-    // 3. Lê o resultado da engine
     const data = await response.json();
-    console.log(`✅ URL avaliada com sucesso: ${url}`);
-    // 4. Devolve para o front 
-    return res.json({
-      status: "success",
-      analyzedUrl: url,
-      engineResponse: data
-    });
-
+    return res.json({ status: 'success', analyzedUrl: url, engineResponse: data });
   } catch (error) {
-    console.error("Erro na rota /avalie:", error);
+    console.error('Erro na rota /avalie:', error);
     return res.status(500).json({
-      status: "error",
-      message: "Falha ao processar a análise",
-      details: error.message
+      status: 'error',
+      message: 'Falha ao processar a análise',
+      details: error instanceof Error ? error.message : String(error),
     });
   }
 });
 
-app.listen(3001, () => console.log("Middleware SEO rodando na 3001"));
+app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+
+app.listen(PORT, () => console.log(`Middleware SEO rodando na ${PORT}`));

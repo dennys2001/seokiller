@@ -1,5 +1,17 @@
 {
+  "name": "seokiller-root",
+  "private": true,
   "dependencies": {
     "node-fetch": "^2.7.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  },
+  "scripts": {
+    "setup": "npm --prefix seokiller/server install && npm --prefix wcs install",
+    "dev:engine": "cd seokiller/server && node engine.js",
+    "dev:api": "cd seokiller/server && node index.js",
+    "dev:web": "cd wcs && npm run dev",
+    "dev": "concurrently -n engine,api,web -c green,blue,magenta \"npm run dev:engine\" \"npm run dev:api\" \"npm run dev:web\""
   }
 }
