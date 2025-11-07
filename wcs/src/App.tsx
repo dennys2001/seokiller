@@ -11,8 +11,16 @@ export default function App() {
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
 
-  // Engine URL via Vite env (fallback to localhost)
-  const ENGINE_URL = import.meta.env.VITE_ENGINE_URL ?? 'http://localhost:3001/avalie';
+  // API URL via Vite env (middleware). Default to same-origin path using Vite proxy in dev
+  const API_URL = import.meta.env.VITE_API_URL || '/avalie';
+
+  // Warn if pointing directly to engine (likely missing CORS on engine)
+  if (API_URL.includes('/analyze')) {
+    console.warn(
+      `VITE_API_URL appears to point to the engine ("${API_URL}"). ` +
+        'Point it to the middleware endpoint, e.g., http://localhost:3001/avalie.'
+    );
+  }
 
   const handleSubmit = async () => {
     if (!url.trim()) {
@@ -25,7 +33,7 @@ export default function App() {
     setResult('');
 
     try {
-      const response = await fetch(ENGINE_URL, {
+      const response = await fetch(API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
