@@ -76,7 +76,7 @@ export default function App() {
       <div className="w-full max-w-2xl space-y-8">
         {/* Logo/Title */}
         <div className="text-center space-y-2">
-          <h1 className="text-4xl">SEO AI Optimizer</h1>
+          <h1 className="text-4xl">GEO AEO Optimizer</h1>
           <p className="text-gray-600">
             Otimize o conteúdo do seu site para SEO
           </p>
