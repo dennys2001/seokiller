@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
+const archiver = require('archiver');
 // Ensure fetch exists on older Node versions
 const fetch = global.fetch || require('node-fetch');
 
@@ -63,7 +64,53 @@ app.post('/avalie', async (req, res) => {
     }
 
     const data = await response.json();
-    return res.json({ status: 'success', analyzedUrl: url, engineResponse: data });
+
+    const content =
+      data?.optimizedContent ||
+      data?.content ||
+      data?.summary ||
+      data?.message ||
+      '';
+
+    const files = Array.isArray(data?.files) ? data.files : [];
+
+    const wantZip = req.query?.zip === '1' || req.query?.zip === 'true';
+    if (wantZip) {
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', 'attachment; filename="analysis.zip"');
+
+      const archive = archiver('zip', { zlib: { level: 9 } });
+      archive.on('error', (err) => {
+        console.error('Zip error:', err);
+        if (!res.headersSent) {
+          res.status(500);
+        }
+        res.end();
+      });
+      archive.pipe(res);
+
+      archive.append((content || '').toString(), { name: 'content.txt' });
+      archive.append(Buffer.from(JSON.stringify(data, null, 2)), { name: 'engineResponse.json' });
+
+      if (Array.isArray(files)) {
+        for (const f of files) {
+          const name = (f && f.filename) ? String(f.filename) : 'file.json';
+          const payload = JSON.stringify(f?.data ?? f, null, 2);
+          archive.append(Buffer.from(payload), { name });
+        }
+      }
+
+      await archive.finalize();
+      return; // streamed
+    }
+
+    return res.json({
+      status: 'success',
+      analyzedUrl: url,
+      content,
+      files,
+      engineResponse: data,
+    });
   } catch (error) {
     console.error('Erro na rota /avalie:', error);
     return res.status(500).json({
