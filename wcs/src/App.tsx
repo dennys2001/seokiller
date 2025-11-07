@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { Card } from './components/ui/card';
-import { Loader2, Copy, Check } from 'lucide-react';
+import { Loader2, Copy, Check, Download } from 'lucide-react';
 
 export default function App() {
   const [url, setUrl] = useState('');
@@ -10,6 +10,8 @@ export default function App() {
   const [result, setResult] = useState('');
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [files, setFiles] = useState<Array<{ filename: string; mimeType?: string; data: any }>>([]);
+  const [downloadingAll, setDownloadingAll] = useState(false);
 
   // API URL via Vite env (middleware). Default to same-origin path using Vite proxy in dev
   const API_URL = import.meta.env.VITE_API_URL || '/avalie';
@@ -31,6 +33,7 @@ export default function App() {
     setLoading(true);
     setError('');
     setResult('');
+    setFiles([]);
 
     try {
       const response = await fetch(API_URL, {
@@ -50,6 +53,13 @@ export default function App() {
       // Ajuste este campo conforme a resposta do seu engine
       // Ex: data.content, data.optimizedText, data.result, etc.
       setResult(data.optimizedContent || data.content || data.result || JSON.stringify(data, null, 2));
+
+      // Recebe arquivos retornados pela API (top-level) ou vindos dentro de engineResponse
+      const incomingFiles =
+        (Array.isArray(data?.files) && data.files) ||
+        (Array.isArray(data?.engineResponse?.files) && data.engineResponse.files) ||
+        [];
+      setFiles(incomingFiles);
       
     } catch (err) {
       console.error('Error calling engine:', err);
@@ -63,6 +73,45 @@ export default function App() {
     await navigator.clipboard.writeText(result);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDownload = (file: { filename: string; mimeType?: string; data: any }) => {
+    const jsonString = JSON.stringify(file.data, null, 2);
+    const blob = new Blob([jsonString], { type: file.mimeType || 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = file.filename || 'arquivo.json';
+    document.body.appendChild(link);
+    link.click();
+    URL.revokeObjectURL(link.href);
+    document.body.removeChild(link);
+  };
+
+  const handleDownloadAll = async () => {
+    try {
+      setDownloadingAll(true);
+      const response = await fetch(`${API_URL}?zip=1`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      if (!response.ok) throw new Error(`Erro: ${response.status} ${response.statusText}`);
+      const blob = await response.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      let base = 'analysis';
+      try { base = new URL(url).hostname || base; } catch {}
+      link.download = `${base}-analysis.zip`;
+      document.body.appendChild(link);
+      link.click();
+      URL.revokeObjectURL(link.href);
+      document.body.removeChild(link);
+    } catch (e) {
+      console.error('Erro ao baixar zip:', e);
+      setError(e instanceof Error ? e.message : 'Falha ao baixar os arquivos');
+    } finally {
+      setDownloadingAll(false);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -110,6 +159,100 @@ export default function App() {
           <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
             {error}
           </div>
+        )}
+
+        {/* Files List */}
+        {files.length > 0 && (
+          <Card className="p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2>Arquivos gerados</h2>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={handleDownloadAll}
+                disabled={downloadingAll || !url}
+                className="flex items-center gap-2"
+              >
+                {downloadingAll ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Baixando...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4" /> Download tudo (.zip)
+                  </>
+                )}
+              </Button>
+            </div>
+            <div className="space-y-2">
+              {files.map((file, idx) => (
+                <div key={`${file.filename}-${idx}`} className="flex items-center justify-between border rounded-md p-3">
+                  <div>
+                    <p className="font-medium">{file.filename || `arquivo-${idx + 1}.json`}</p>
+                    <p className="text-xs text-gray-500">{file.mimeType || 'application/json'}</p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => handleDownload(file)}>
+                    Baixar
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Structured Results */}
+        {files.length > 0 && (
+          <Card className="p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2>Resumo Estruturado</h2>
+            </div>
+            {(() => {
+              const get = (name: string) => files.find((f) => f.filename === name)?.data || {};
+              const summary: any = get('summary.json');
+              const headings: any = get('headings.json');
+              const meta: any = get('meta.json');
+              const issues: Array<any> = Array.isArray(summary?.issues) ? summary.issues : [];
+              return (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-3 border rounded-md">
+                      <p className="text-xs text-gray-500">Score</p>
+                      <p className="text-lg font-semibold">{summary?.score ?? '-'}</p>
+                    </div>
+                    <div className="p-3 border rounded-md">
+                      <p className="text-xs text-gray-500">Meta Description</p>
+                      <p className="text-sm break-words">{meta?.description ?? '—'}</p>
+                      <p className="text-xs text-gray-500">Tamanho: {meta?.descriptionLength ?? 0}</p>
+                    </div>
+                    <div className="p-3 border rounded-md col-span-2">
+                      <p className="text-xs text-gray-500">Título</p>
+                      <p className="text-sm break-words">{headings?.title ?? '—'}</p>
+                    </div>
+                    <div className="p-3 border rounded-md">
+                      <p className="text-xs text-gray-500">H1</p>
+                      <p className="text-sm">{Array.isArray(headings?.h1) ? headings.h1.join(', ') : '—'}</p>
+                    </div>
+                    <div className="p-3 border rounded-md">
+                      <p className="text-xs text-gray-500">H2</p>
+                      <p className="text-sm">{Array.isArray(headings?.h2) ? headings.h2.join(', ') : '—'}</p>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium mb-2">Issues</p>
+                    {issues.length === 0 ? (
+                      <p className="text-sm text-gray-500">Nenhuma issue encontrada</p>
+                    ) : (
+                      <ul className="list-disc pl-5 space-y-1 text-sm">
+                        {issues.map((it, i) => (
+                          <li key={i}>{it?.message ?? JSON.stringify(it)}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+          </Card>
         )}
 
         {/* Result Box */}
