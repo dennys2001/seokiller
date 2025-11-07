@@ -11,8 +11,16 @@ export default function App() {
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
 
-  // CONFIGURE AQUI A URL DO SEU ENGINE
-  const ENGINE_URL = 'http://localhost:3001/avalie'; // Altere para a URL do seu engine
+  // API URL via Vite env (middleware). Default to same-origin path using Vite proxy in dev
+  const API_URL = import.meta.env.VITE_API_URL || '/avalie';
+
+  // Warn if pointing directly to engine (likely missing CORS on engine)
+  if (API_URL.includes('/analyze')) {
+    console.warn(
+      `VITE_API_URL appears to point to the engine ("${API_URL}"). ` +
+        'Point it to the middleware endpoint, e.g., http://localhost:3001/avalie.'
+    );
+  }
 
   const handleSubmit = async () => {
     if (!url.trim()) {
@@ -25,7 +33,7 @@ export default function App() {
     setResult('');
 
     try {
-      const response = await fetch(ENGINE_URL, {
+      const response = await fetch(API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -68,7 +76,7 @@ export default function App() {
       <div className="w-full max-w-2xl space-y-8">
         {/* Logo/Title */}
         <div className="text-center space-y-2">
-          <h1 className="text-4xl">SEO AI Optimizer</h1>
+          <h1 className="text-4xl">GEO AEO Optimizer</h1>
           <p className="text-gray-600">
             Otimize o conteúdo do seu site para SEO
           </p>
