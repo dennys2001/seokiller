@@ -1,0 +1,44 @@
+version: "3.9"
+services:
+  engine:
+    build:
+      context: ./seokiller/server
+      dockerfile: Dockerfile.engine
+    environment:
+      - ENGINE_PORT=5000
+    ports:
+      - "5000:5000"
+    networks:
+      - seokiller
+
+  api:
+    build:
+      context: ./seokiller/server
+      dockerfile: Dockerfile.api
+    environment:
+      - PORT=3001
+      - ENGINE_URL=http://engine:5000/analyze
+      - CORS_ORIGIN=*
+      - NODE_ENV=production
+    depends_on:
+      - engine
+    ports:
+      - "3001:3001"
+    networks:
+      - seokiller
+
+  web:
+    build:
+      context: ./wcs
+      dockerfile: Dockerfile
+    depends_on:
+      - api
+    ports:
+      - "8080:80"
+    networks:
+      - seokiller
+
+networks:
+  seokiller:
+    driver: bridge
+
