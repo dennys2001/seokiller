@@ -56,4 +56,8 @@ app.post('/analyze', (req, res) => {
 });
 
 const PORT = parseInt(process.env.ENGINE_PORT, 10) || 5000;
-app.listen(PORT, () => console.log(`Engine falsa rodando na ${PORT}`));
+if (require.main === module) {
+  app.listen(PORT, () => console.log(`Engine falsa rodando na ${PORT}`));
+}
+
+module.exports = { app };

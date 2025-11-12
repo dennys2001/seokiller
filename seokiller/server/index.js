@@ -123,4 +123,9 @@ app.post('/avalie', async (req, res) => {
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
-app.listen(PORT, () => console.log(`Middleware SEO rodando na ${PORT}`));
+// Export app for tests; only listen when run directly
+if (require.main === module) {
+  app.listen(PORT, () => console.log(`Middleware SEO rodando na ${PORT}`));
+}
+
+module.exports = { app };
