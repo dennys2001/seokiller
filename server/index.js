@@ -38,32 +38,124 @@ app.options('/avalie', cors(corsOptions));
 
 const PORT = parseInt(process.env.PORT, 10) || 3001;
 const ENGINE_URL = process.env.ENGINE_URL || 'http://localhost:5000/analyze';
+const ENGINE_TIMEOUT_MS =
+  parseInt(process.env.ENGINE_TIMEOUT_MS, 10) || 20_000;
+const SHARED_KEY = (process.env.WCE_SHARED_KEY || '').trim();
+
+const trimUrl = (value) =>
+  typeof value === 'string' ? value.trim() : '';
+
+const isHttpUrl = (value) => /^https?:\/\//i.test(value);
+
+async function readEnginePayload(response) {
+  const raw = await response.text();
+  if (!raw) {
+    return { raw: '', json: null };
+  }
+  try {
+    return { raw, json: JSON.parse(raw) };
+  } catch (err) {
+    console.warn('[middleware] Engine returned non-JSON payload');
+    return { raw, json: null };
+  }
+}
+
+function sendError(res, status, message, extra = {}) {
+  res.statusMessage = message;
+  return res.status(status).json({
+    status: 'error',
+    message,
+    ...extra,
+  });
+}
+
+function isAuthorized(req) {
+  if (!SHARED_KEY) return true;
+  const key = req.header('x-wce-key');
+  return typeof key === 'string' && key === SHARED_KEY;
+}
+
+function friendlyEngineMessage(originalMessage, url) {
+  if (!originalMessage) {
+    return 'Nao foi possivel processar a URL informada';
+  }
+  const text = originalMessage.toLowerCase();
+  if (
+    text.includes('falha ao buscar url') ||
+    text.includes('name resolution') ||
+    text.includes('getaddrinfo') ||
+    text.includes('failed to resolve')
+  ) {
+    return `Nao foi possivel acessar ${url}. Confirme se o endereco existe e tente novamente.`;
+  }
+  if (text.includes('timeout') || text.includes('timed out')) {
+    return `A conexao com ${url} demorou demais. Tente novamente em instantes.`;
+  }
+  return originalMessage;
+}
 
 // Proxy route called by the frontend
 app.post('/avalie', async (req, res) => {
   try {
-    const { url } = req.body || {};
-    if (!url) {
-      return res
-        .status(400)
-        .json({ status: 'error', message: "Campo 'url' é obrigatório" });
+    if (!isAuthorized(req)) {
+      return sendError(res, 401, 'Chave de acesso invalida');
     }
-    console.log(`[middleware] Receiving URL to analyze: ${url}`);
-    console.log(`[middleware] Forwarding to engine: ${ENGINE_URL}`);
-
-    const response = await fetch(ENGINE_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url }),
-    });
-
-    if (!response.ok) {
-      throw new Error(
-        `Erro ao chamar a engine SEO: ${response.status} ${response.statusText}`
+    const normalizedUrl = trimUrl(req.body?.url);
+    if (!normalizedUrl) {
+      return sendError(res, 400, "Informe uma URL antes de continuar");
+    }
+    if (!isHttpUrl(normalizedUrl)) {
+      return sendError(
+        res,
+        400,
+        "URL invalida. Use enderecos iniciando com http:// ou https://"
       );
     }
+    console.log(`[middleware] Receiving URL to analyze: ${normalizedUrl}`);
+    console.log(`[middleware] Forwarding to engine: ${ENGINE_URL}`);
 
-    const data = await response.json();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      ENGINE_TIMEOUT_MS
+    );
+
+    let response;
+    try {
+      response = await fetch(ENGINE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: normalizedUrl }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    const { json: data, raw } = await readEnginePayload(response);
+
+    if (!response.ok) {
+      const status =
+        response.status >= 400 && response.status < 500
+          ? response.status
+          : 502;
+      const message =
+        data && typeof data === 'object' && data.message
+          ? data.message
+          : `Engine retornou ${response.status} ${response.statusText}`;
+      const friendlyMessage = friendlyEngineMessage(message, normalizedUrl);
+      return sendError(res, status, friendlyMessage, {
+        engineStatus: response.status,
+        engineResponse: data ?? raw,
+        debugMessage: message,
+      });
+    }
+
+    if (!data || typeof data !== 'object') {
+      return sendError(res, 502, 'Engine respondeu com formato inesperado', {
+        engineResponse: raw,
+      });
+    }
 
     const content =
       data?.optimizedContent ||
@@ -106,16 +198,19 @@ app.post('/avalie', async (req, res) => {
 
     return res.json({
       status: 'success',
-      analyzedUrl: url,
+      analyzedUrl: data?.analyzedUrl || normalizedUrl,
       content,
       files,
       engineResponse: data,
     });
   } catch (error) {
     console.error('Erro na rota /avalie:', error);
-    return res.status(500).json({
-      status: 'error',
-      message: 'Falha ao processar a análise',
+    const isAbort = error?.name === 'AbortError';
+    const status = isAbort ? 504 : 502;
+    const message = isAbort
+      ? 'Tempo de resposta esgotado ao contatar a engine'
+      : 'Nao foi possivel contatar a engine SEO';
+    return sendError(res, status, message, {
       details: error instanceof Error ? error.message : String(error),
     });
   }

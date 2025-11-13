@@ -17,6 +17,15 @@ export default function App() {
 
   // API URL via Vite env (middleware). Default to same-origin path using Vite proxy in dev
   const API_URL = import.meta.env.VITE_API_URL || '/avalie';
+  const WCE_KEY = import.meta.env.VITE_WCE_KEY || '';
+
+  const buildHeaders = () => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (WCE_KEY) {
+      headers['x-wce-key'] = WCE_KEY;
+    }
+    return headers;
+  };
 
   // Warn if pointing directly to engine (likely missing CORS on engine)
   if (API_URL.includes('/analyze')) {
@@ -42,9 +51,7 @@ export default function App() {
     try {
       const response = await fetch(API_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: buildHeaders(),
         body: JSON.stringify({ url }),
       });
 
@@ -89,7 +96,7 @@ export default function App() {
     try {
       const response = await fetch(API_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildHeaders(),
         body: JSON.stringify({ url }),
       });
       if (!response.ok) {
@@ -132,7 +139,7 @@ export default function App() {
       setDownloadingAll(true);
       const response = await fetch(`${API_URL}?zip=1`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildHeaders(),
         body: JSON.stringify({ url }),
       });
       if (!response.ok) throw new Error(`Erro: ${response.status} ${response.statusText}`);
