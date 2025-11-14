@@ -7,6 +7,7 @@
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
+    "start": "node index.js",
     "test": "jest"
   },
   "dependencies": {
@@ -17,8 +18,7 @@
     "express": "^5.1.0",
     "g": "^2.0.1",
     "node-fetch": "^2.7.0",
-    "nodemon": "^3.1.10",
-    "seokiller-root": "file:../.."
+    "nodemon": "^3.1.10"
   },
   "devDependencies": {
     "jest": "^29.7.0",

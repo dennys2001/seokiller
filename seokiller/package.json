@@ -1,6 +1,0 @@
-{
-  "dependencies": {
-    "nodemon": "^3.1.10",
-    "python": "^0.0.4"
-  }
-}
