@@ -11,10 +11,10 @@ const app = express();
 app.use(express.json());
 
 // CORS: allow only configured origins (or '*')
-const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
-  .split(',')
-  .map((o) => o.trim())
-  .filter(Boolean);
+const allowedOrigins = process.env.CORS_ORIGIN.split(',');
+ //.split(',')
+ //.map((o) => o.trim())
+ // .filter(Boolean);
 
 const corsOptions = {
   origin: function (origin, callback) {
