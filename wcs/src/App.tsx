@@ -7,11 +7,13 @@ import { Loader2, Copy, Check, Download } from 'lucide-react';
 export default function App() {
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingSummary, setLoadingSummary] = useState(false);
   const [result, setResult] = useState('');
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [files, setFiles] = useState<Array<{ filename: string; mimeType?: string; data: any }>>([]);
   const [downloadingAll, setDownloadingAll] = useState(false);
+  const [summaryOnlyMode, setSummaryOnlyMode] = useState(false);
 
   // API URL via Vite env (middleware). Default to same-origin path using Vite proxy in dev
   const API_URL = import.meta.env.VITE_API_URL || '/avalie';
@@ -31,6 +33,8 @@ export default function App() {
     }
 
     setLoading(true);
+    setLoadingSummary(false);
+    setSummaryOnlyMode(false);
     setError('');
     setResult('');
     setFiles([]);
@@ -66,6 +70,42 @@ export default function App() {
       setError(err instanceof Error ? err.message : 'Erro ao conectar com o engine');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSummaryOnly = async () => {
+    if (!url.trim()) {
+      setError('Por favor, insira uma URL valida');
+      return;
+    }
+
+    setLoadingSummary(true);
+    setLoading(false);
+    setSummaryOnlyMode(true);
+    setError('');
+    setResult('');
+    setFiles([]);
+
+    try {
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      if (!response.ok) {
+        throw new Error(`Erro: ${response.status} ${response.statusText}`);
+      }
+      const data = await response.json();
+      const incomingFiles =
+        (Array.isArray(data?.files) && data.files) ||
+        (Array.isArray(data?.engineResponse?.files) && data.engineResponse.files) ||
+        [];
+      setFiles(incomingFiles);
+    } catch (err) {
+      console.error('Error calling engine (summary-only):', err);
+      setError(err instanceof Error ? err.message : 'Erro ao conectar com o engine');
+    } finally {
+      setLoadingSummary(false);
     }
   };
 
@@ -139,10 +179,10 @@ export default function App() {
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             onKeyPress={handleKeyPress}
-            disabled={loading}
+            disabled={loading || loadingSummary}
             className="flex-1"
           />
-          <Button onClick={handleSubmit} disabled={loading}>
+          <Button onClick={handleSubmit} disabled={loading || loadingSummary}>
             {loading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -150,6 +190,16 @@ export default function App() {
               </>
             ) : (
               'Enviar'
+            )}
+          </Button>
+          <Button onClick={handleSummaryOnly} disabled={loading || loadingSummary}>
+            {loadingSummary ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Analisando
+              </>
+            ) : (
+              'Somente Resumo'
             )}
           </Button>
         </div>
@@ -162,7 +212,7 @@ export default function App() {
         )}
 
         {/* Files List */}
-        {files.length > 0 && (
+        {files.length > 0 && !summaryOnlyMode && (
           <Card className="p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h2>Arquivos gerados</h2>
@@ -286,7 +336,7 @@ export default function App() {
         )}
 
         {/* Loading State */}
-        {loading && (
+        {(loading || loadingSummary) && (
           <div className="text-center text-gray-600">
             <p>Analisando o conteúdo do site...</p>
           </div>
