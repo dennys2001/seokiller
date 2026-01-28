@@ -120,12 +120,25 @@ app.post('/avalie', async (req, res) => {
       ENGINE_TIMEOUT_MS
     );
 
+    const payload = {
+      url: normalizedUrl,
+      useCrawler: !!req.body?.useCrawler,
+    };
+    const openaiCfg = req.body?.openai || {};
+    if (openaiCfg && (openaiCfg.endpoint || openaiCfg.apiKey || openaiCfg.deployment)) {
+      payload.openai = {
+        endpoint: openaiCfg.endpoint,
+        apiKey: openaiCfg.apiKey,
+        deployment: openaiCfg.deployment,
+      };
+    }
+
     let response;
     try {
       response = await fetch(ENGINE_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: normalizedUrl }),
+        body: JSON.stringify(payload),
         signal: controller.signal,
       });
     } finally {

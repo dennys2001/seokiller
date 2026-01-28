@@ -311,6 +311,7 @@ def analyze():
     body = request.get_json(silent=True) or {}
     url = (body.get("url") or "").strip()
     use_crawler = bool(body.get("useCrawler"))
+    openai_cfg = body.get("openai") or {}
 
     if not url:
         return jsonify({"status": "error", "message": "Campo 'url' e obrigatorio"}), 400
@@ -326,7 +327,7 @@ def analyze():
             results = []
             files = []
             for page in pages:
-                aeo = generate_aeo_content(page)
+                aeo = generate_aeo_content(page, openai_cfg=openai_cfg)
                 schema_json = build_schema(aeo, page)
                 safe = safe_filename(page.get("url", url))
                 results.append(
