@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { Card } from './components/ui/card';
+import { Checkbox } from './components/ui/checkbox';
 import { Loader2, Copy, Check, Download } from 'lucide-react';
 
 export default function App() {
@@ -14,6 +15,7 @@ export default function App() {
   const [files, setFiles] = useState<Array<{ filename: string; mimeType?: string; data: any }>>([]);
   const [downloadingAll, setDownloadingAll] = useState(false);
   const [summaryOnlyMode, setSummaryOnlyMode] = useState(false);
+  const [useCrawler, setUseCrawler] = useState(false);
 
   // API URL via Vite env (middleware). Default to same-origin path using Vite proxy in dev
   const API_URL = import.meta.env.VITE_API_URL || '/avalie';
@@ -52,7 +54,7 @@ export default function App() {
       const response = await fetch(API_URL, {
         method: 'POST',
         headers: buildHeaders(),
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, useCrawler }),
       });
 
       if (!response.ok) {
@@ -97,7 +99,7 @@ export default function App() {
       const response = await fetch(API_URL, {
         method: 'POST',
         headers: buildHeaders(),
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, useCrawler }),
       });
       if (!response.ok) {
         throw new Error(`Erro: ${response.status} ${response.statusText}`);
@@ -209,6 +211,17 @@ export default function App() {
               'Somente Resumo'
             )}
           </Button>
+        </div>
+        <div className="flex items-center gap-2 text-sm text-gray-700">
+          <Checkbox
+            id="use-crawler"
+            checked={useCrawler}
+            onCheckedChange={(val) => setUseCrawler(!!val)}
+            disabled={loading || loadingSummary}
+          />
+          <label htmlFor="use-crawler" className="select-none cursor-pointer">
+            Usar crawler para varrer o dom��nio inteiro antes de otimizar
+          </label>
         </div>
 
         {/* Error Message */}
