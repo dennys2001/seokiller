@@ -27,7 +27,7 @@ const corsOptions = {
     return callback(null, allowed);
   },
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-wce-key'],
   credentials: false,
   optionsSuccessStatus: 204,
 };
