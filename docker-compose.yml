@@ -8,6 +8,7 @@ services:
       - ./python-engine/.env
     environment:
       ENGINE_PORT: ${ENGINE_PORT:-5000}
+      ENGINE_REQUEST_TIMEOUT: ${ENGINE_REQUEST_TIMEOUT:-180}
     ports:
       - "5000:5000"
 
@@ -19,6 +20,7 @@ services:
       ENGINE_URL: http://engine:5000/analyze
       CORS_ORIGIN: http://localhost:4173
       WCE_SHARED_KEY: ${WCE_SHARED_KEY:-super-secret-key}
+      ENGINE_TIMEOUT_MS: ${ENGINE_TIMEOUT_MS:-180000}
     depends_on:
       - engine
     ports:

@@ -12,7 +12,7 @@ DEFAULT_HEADERS = {
 
 
 class AsyncCrawler:
-    def __init__(self, start_url: str, max_pages: int = 30, max_tasks: int = 8, delay: float = 0.5, timeout: int = 10):
+    def __init__(self, start_url: str, max_pages: int = 30, max_tasks: int = 8, delay: float = 0.5, timeout: int = 180):
         self.start_url = start_url
         self.parsed_start = urlparse(start_url)
         self.max_pages = max_pages
@@ -109,6 +109,6 @@ class AsyncCrawler:
         return self.results
 
 
-def crawl_site(url: str, max_pages: int = 30, max_tasks: int = 8, delay: float = 0.5, timeout: int = 10):
+def crawl_site(url: str, max_pages: int = 30, max_tasks: int = 8, delay: float = 0.5, timeout: int = 180):
     crawler = AsyncCrawler(url, max_pages=max_pages, max_tasks=max_tasks, delay=delay, timeout=timeout)
     return asyncio.run(crawler.crawl())

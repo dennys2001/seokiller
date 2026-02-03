@@ -20,6 +20,8 @@ export default function App() {
   const [openaiApiKey, setOpenaiApiKey] = useState('');
   const [openaiDeployment, setOpenaiDeployment] = useState('');
 
+  const REQUEST_TIMEOUT_MS = 180_000;
+
   // API URL via Vite env (middleware). Default to same-origin path using Vite proxy in dev
   const API_URL = import.meta.env.VITE_API_URL || '/avalie';
   const WCE_KEY = import.meta.env.VITE_WCE_KEY || '';
@@ -30,6 +32,16 @@ export default function App() {
       headers['x-wce-key'] = WCE_KEY;
     }
     return headers;
+  };
+
+  const fetchWithTimeout = async (input: RequestInfo, init?: RequestInit) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(input, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
   };
 
   // Warn if pointing directly to engine (likely missing CORS on engine)
@@ -54,7 +66,7 @@ export default function App() {
     setFiles([]);
 
     try {
-      const response = await fetch(API_URL, {
+      const response = await fetchWithTimeout(API_URL, {
         method: 'POST',
         headers: buildHeaders(),
         body: JSON.stringify({
@@ -107,7 +119,7 @@ export default function App() {
     setFiles([]);
 
     try {
-      const response = await fetch(API_URL, {
+      const response = await fetchWithTimeout(API_URL, {
         method: 'POST',
         headers: buildHeaders(),
         body: JSON.stringify({
@@ -158,7 +170,7 @@ export default function App() {
   const handleDownloadAll = async () => {
     try {
       setDownloadingAll(true);
-      const response = await fetch(`${API_URL}?zip=1`, {
+      const response = await fetchWithTimeout(`${API_URL}?zip=1`, {
         method: 'POST',
         headers: buildHeaders(),
         body: JSON.stringify({
@@ -188,6 +200,20 @@ export default function App() {
     } finally {
       setDownloadingAll(false);
     }
+  };
+
+  const handleClearAll = () => {
+    setUrl('');
+    setResult('');
+    setError('');
+    setFiles([]);
+    setCopied(false);
+    setSummaryOnlyMode(false);
+    setUseCrawler(false);
+    setOpenaiEndpoint('');
+    setOpenaiApiKey('');
+    setOpenaiDeployment('');
+    setDownloadingAll(false);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -237,6 +263,9 @@ export default function App() {
             ) : (
               'Somente Resumo'
             )}
+          </Button>
+          <Button variant="outline" onClick={handleClearAll} disabled={loading || loadingSummary}>
+            Limpar Tudo
           </Button>
         </div>
         <div className="flex items-center gap-2 text-sm text-gray-700">

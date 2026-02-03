@@ -16,7 +16,10 @@ from crawler_async import crawl_site
 from schema_builder import build_schema
 
 
-def fetch_html(target_url: str, timeout: int = 15):
+DEFAULT_REQUEST_TIMEOUT = int(os.getenv("ENGINE_REQUEST_TIMEOUT", "180"))
+
+
+def fetch_html(target_url: str, timeout: int = DEFAULT_REQUEST_TIMEOUT):
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -321,7 +324,7 @@ def analyze():
             max_pages = int(body.get("maxPages") or 15)
             max_tasks = int(body.get("maxTasks") or 6)
             delay = float(body.get("delay") or 0.4)
-            timeout = int(body.get("timeout") or 10)
+            timeout = int(body.get("timeout") or DEFAULT_REQUEST_TIMEOUT)
 
             pages = crawl_site(url, max_pages=max_pages, max_tasks=max_tasks, delay=delay, timeout=timeout)
             results = []

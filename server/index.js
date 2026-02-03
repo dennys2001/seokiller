@@ -39,7 +39,7 @@ app.options('/avalie', cors(corsOptions));
 const PORT = parseInt(process.env.PORT, 10) || 3001;
 const ENGINE_URL = process.env.ENGINE_URL || 'http://localhost:5000/analyze';
 const ENGINE_TIMEOUT_MS =
-  parseInt(process.env.ENGINE_TIMEOUT_MS, 10) || 20_000;
+  parseInt(process.env.ENGINE_TIMEOUT_MS, 10) || 180_000;
 const SHARED_KEY = (process.env.WCE_SHARED_KEY || '').trim();
 
 const trimUrl = (value) =>
