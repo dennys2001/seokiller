@@ -124,14 +124,6 @@ app.post('/avalie', async (req, res) => {
       url: normalizedUrl,
       useCrawler: !!req.body?.useCrawler,
     };
-    const openaiCfg = req.body?.openai || {};
-    if (openaiCfg && (openaiCfg.endpoint || openaiCfg.apiKey || openaiCfg.deployment)) {
-      payload.openai = {
-        endpoint: openaiCfg.endpoint,
-        apiKey: openaiCfg.apiKey,
-        deployment: openaiCfg.deployment,
-      };
-    }
 
     let response;
     try {

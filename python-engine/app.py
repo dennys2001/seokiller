@@ -314,7 +314,6 @@ def analyze():
     body = request.get_json(silent=True) or {}
     url = (body.get("url") or "").strip()
     use_crawler = bool(body.get("useCrawler"))
-    openai_cfg = body.get("openai") or {}
 
     if not url:
         return jsonify({"status": "error", "message": "Campo 'url' e obrigatorio"}), 400
@@ -330,7 +329,7 @@ def analyze():
             results = []
             files = []
             for page in pages:
-                aeo = generate_aeo_content(page, openai_cfg=openai_cfg)
+                aeo = generate_aeo_content(page)
                 schema_json = build_schema(aeo, page)
                 safe = safe_filename(page.get("url", url))
                 results.append(
@@ -356,6 +355,25 @@ def analyze():
                         "data": json.loads(schema_json),
                     }
                 )
+
+            if results:
+                primary = results[0]
+                basic = {
+                    "title": primary.get("title"),
+                    "description": None,
+                    "descriptionLength": 0,
+                    "h1": [primary.get("h1")] if primary.get("h1") else [],
+                    "h2": [],
+                }
+                struct = {
+                    "hreflang": [],
+                    "ogLocale": None,
+                    "geoMeta": {},
+                    "hasFAQ": False,
+                    "hasLocalBusiness": False,
+                }
+                score, issues = compute_score(basic, struct, [])
+                files.extend(build_files(primary.get("url") or url, basic, {"internal": [], "external": []}, score, issues))
 
             return jsonify(
                 {

@@ -16,9 +16,6 @@ export default function App() {
   const [downloadingAll, setDownloadingAll] = useState(false);
   const [summaryOnlyMode, setSummaryOnlyMode] = useState(false);
   const [useCrawler, setUseCrawler] = useState(false);
-  const [openaiEndpoint, setOpenaiEndpoint] = useState('');
-  const [openaiApiKey, setOpenaiApiKey] = useState('');
-  const [openaiDeployment, setOpenaiDeployment] = useState('');
 
   const REQUEST_TIMEOUT_MS = 180_000;
 
@@ -72,11 +69,6 @@ export default function App() {
         body: JSON.stringify({
           url,
           useCrawler,
-          openai: {
-            endpoint: openaiEndpoint || undefined,
-            apiKey: openaiApiKey || undefined,
-            deployment: openaiDeployment || undefined,
-          },
         }),
       });
 
@@ -125,11 +117,6 @@ export default function App() {
         body: JSON.stringify({
           url,
           useCrawler,
-          openai: {
-            endpoint: openaiEndpoint || undefined,
-            apiKey: openaiApiKey || undefined,
-            deployment: openaiDeployment || undefined,
-          },
         }),
       });
       if (!response.ok) {
@@ -176,11 +163,6 @@ export default function App() {
         body: JSON.stringify({
           url,
           useCrawler,
-          openai: {
-            endpoint: openaiEndpoint || undefined,
-            apiKey: openaiApiKey || undefined,
-            deployment: openaiDeployment || undefined,
-          },
         }),
       });
       if (!response.ok) throw new Error(`Erro: ${response.status} ${response.statusText}`);
@@ -210,9 +192,6 @@ export default function App() {
     setCopied(false);
     setSummaryOnlyMode(false);
     setUseCrawler(false);
-    setOpenaiEndpoint('');
-    setOpenaiApiKey('');
-    setOpenaiDeployment('');
     setDownloadingAll(false);
   };
 
@@ -279,34 +258,6 @@ export default function App() {
             Usar crawler para varrer o dominio inteiro antes de otimizar
           </label>
         </div>
-        <Card className="p-4 space-y-3">
-          <p className="text-sm font-medium">Credenciais Azure OpenAI (opcional)</p>
-          <p className="text-xs text-gray-600">Preencha para usar suas proprias chaves. Se vazio, usa o backend.</p>
-          <div className="space-y-2">
-            <Input
-              type="url"
-              placeholder="Endpoint (ex: https://xxx.cognitiveservices.azure.com/)"
-              value={openaiEndpoint}
-              onChange={(e) => setOpenaiEndpoint(e.target.value)}
-              disabled={loading || loadingSummary}
-            />
-            <Input
-              type="password"
-              placeholder="API Key"
-              value={openaiApiKey}
-              onChange={(e) => setOpenaiApiKey(e.target.value)}
-              disabled={loading || loadingSummary}
-            />
-            <Input
-              type="text"
-              placeholder="Deployment (ex: gpt-4o)"
-              value={openaiDeployment}
-              onChange={(e) => setOpenaiDeployment(e.target.value)}
-              disabled={loading || loadingSummary}
-            />
-          </div>
-        </Card>
-
         {/* Error Message */}
         {error && (
           <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
