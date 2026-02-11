@@ -12,6 +12,7 @@ from flask import Flask, jsonify, request
 load_dotenv()
 
 from content_generator import generate_aeo_content
+from browser_fetch import fetch_html_with_playwright, is_bot_challenge, playwright_enabled
 from crawler_async import crawl_site
 from schema_builder import build_schema
 
@@ -26,12 +27,20 @@ def fetch_html(target_url: str, timeout: int = DEFAULT_REQUEST_TIMEOUT):
             "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
         )
     }
-    resp = requests.get(target_url, headers=headers, timeout=timeout, allow_redirects=True)
-    resp.raise_for_status()
-    ctype = resp.headers.get("Content-Type", "").lower()
-    if "text/html" not in ctype and "application/xhtml+xml" not in ctype:
-        raise ValueError(f"Unsupported content type: {ctype}")
-    return resp.text, resp.url
+    try:
+        resp = requests.get(target_url, headers=headers, timeout=timeout, allow_redirects=True)
+        resp.raise_for_status()
+        ctype = resp.headers.get("Content-Type", "").lower()
+        if "text/html" not in ctype and "application/xhtml+xml" not in ctype:
+            raise ValueError(f"Unsupported content type: {ctype}")
+        if is_bot_challenge(resp.text) and playwright_enabled():
+            return fetch_html_with_playwright(target_url, timeout=timeout)
+        return resp.text, resp.url
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code if e.response is not None else None
+        if status in (403, 429) and playwright_enabled():
+            return fetch_html_with_playwright(target_url, timeout=timeout)
+        raise
 
 
 def normalize_url(base: str, link: str) -> str:

@@ -5,3 +5,4 @@ urllib3==2.2.2
 gunicorn
 aiohttp==3.11.7
 python-dotenv==1.0.1
+playwright==1.51.0

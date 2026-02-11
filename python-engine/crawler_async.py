@@ -1,10 +1,12 @@
 import asyncio
+import os
 from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
 import aiohttp
 from aiohttp import ClientTimeout
 from bs4 import BeautifulSoup
+from browser_fetch import fetch_html_with_playwright, is_bot_challenge, playwright_enabled
 
 DEFAULT_HEADERS = {
     "User-Agent": "GEO-AEO-Bot/1.0 (+https://your-agency.example)"
@@ -24,15 +26,38 @@ class AsyncCrawler:
         self.sem = asyncio.Semaphore(max_tasks)
         self.session = None
         self.robots = RobotFileParser()
-        self.robots.set_url(urljoin(start_url, "/robots.txt"))
+        self.robots_url = urljoin(start_url, "/robots.txt")
+        self.robots_allowed_check = False
+        self.playwright_fallback_count = 0
+        self.playwright_fallback_max = int(os.getenv("PLAYWRIGHT_MAX_FALLBACKS", "2"))
+
+    async def _load_robots(self):
         try:
-            self.robots.read()
+            async with self.session.get(
+                self.robots_url,
+                timeout=ClientTimeout(total=self.timeout),
+                headers=DEFAULT_HEADERS,
+            ) as resp:
+                if resp.status != 200:
+                    # If robots cannot be read (403/404/5xx), keep crawler permissive.
+                    self.robots_allowed_check = False
+                    return
+                text = await resp.text(errors="ignore")
         except Exception:
-            # assume permissive when robots cannot be read
-            pass
+            # If robots cannot be fetched due to network/CDN constraints, keep permissive.
+            self.robots_allowed_check = False
+            return
+
+        lines = [line.strip() for line in text.splitlines()]
+        if not lines:
+            self.robots_allowed_check = False
+            return
+
+        self.robots.parse(lines)
+        self.robots_allowed_check = True
 
     async def fetch(self, url: str):
-        if not self.robots.can_fetch(DEFAULT_HEADERS["User-Agent"], url):
+        if self.robots_allowed_check and not self.robots.can_fetch(DEFAULT_HEADERS["User-Agent"], url):
             return None
         try:
             async with self.sem:
@@ -41,11 +66,27 @@ class AsyncCrawler:
                     timeout=ClientTimeout(total=self.timeout),
                     headers=DEFAULT_HEADERS,
                 ) as resp:
-                    if resp.status != 200:
-                        return None
                     text = await resp.text(errors="ignore")
+                    if resp.status != 200:
+                        if resp.status in (403, 429):
+                            return await self._fetch_with_playwright(url)
+                        return None
+                    if is_bot_challenge(text):
+                        return await self._fetch_with_playwright(url)
                     await asyncio.sleep(self.delay)
                     return text
+        except Exception:
+            return await self._fetch_with_playwright(url)
+
+    async def _fetch_with_playwright(self, url: str):
+        if not playwright_enabled():
+            return None
+        if self.playwright_fallback_count >= self.playwright_fallback_max:
+            return None
+        self.playwright_fallback_count += 1
+        try:
+            html, _ = await asyncio.to_thread(fetch_html_with_playwright, url, self.timeout)
+            return html
         except Exception:
             return None
 
@@ -99,6 +140,7 @@ class AsyncCrawler:
         timeout = ClientTimeout(total=self.timeout)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             self.session = session
+            await self._load_robots()
             await self.to_crawl.put(self.start_url)
             workers = []
             for _ in range(5):
