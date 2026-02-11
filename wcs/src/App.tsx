@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { Card } from './components/ui/card';
+import { Checkbox } from './components/ui/checkbox';
 import { Loader2, Copy, Check, Download } from 'lucide-react';
 
 export default function App() {
@@ -14,6 +15,9 @@ export default function App() {
   const [files, setFiles] = useState<Array<{ filename: string; mimeType?: string; data: any }>>([]);
   const [downloadingAll, setDownloadingAll] = useState(false);
   const [summaryOnlyMode, setSummaryOnlyMode] = useState(false);
+  const [useCrawler, setUseCrawler] = useState(false);
+
+  const REQUEST_TIMEOUT_MS = 180_000;
 
   // API URL via Vite env (middleware). Default to same-origin path using Vite proxy in dev
   const API_URL = import.meta.env.VITE_API_URL || '/avalie';
@@ -25,6 +29,16 @@ export default function App() {
       headers['x-wce-key'] = WCE_KEY;
     }
     return headers;
+  };
+
+  const fetchWithTimeout = async (input: RequestInfo, init?: RequestInit) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(input, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
   };
 
   // Warn if pointing directly to engine (likely missing CORS on engine)
@@ -49,10 +63,13 @@ export default function App() {
     setFiles([]);
 
     try {
-      const response = await fetch(API_URL, {
+      const response = await fetchWithTimeout(API_URL, {
         method: 'POST',
         headers: buildHeaders(),
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({
+          url,
+          useCrawler,
+        }),
       });
 
       if (!response.ok) {
@@ -94,10 +111,13 @@ export default function App() {
     setFiles([]);
 
     try {
-      const response = await fetch(API_URL, {
+      const response = await fetchWithTimeout(API_URL, {
         method: 'POST',
         headers: buildHeaders(),
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({
+          url,
+          useCrawler,
+        }),
       });
       if (!response.ok) {
         throw new Error(`Erro: ${response.status} ${response.statusText}`);
@@ -137,10 +157,13 @@ export default function App() {
   const handleDownloadAll = async () => {
     try {
       setDownloadingAll(true);
-      const response = await fetch(`${API_URL}?zip=1`, {
+      const response = await fetchWithTimeout(`${API_URL}?zip=1`, {
         method: 'POST',
         headers: buildHeaders(),
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({
+          url,
+          useCrawler,
+        }),
       });
       if (!response.ok) throw new Error(`Erro: ${response.status} ${response.statusText}`);
       const blob = await response.blob();
@@ -159,6 +182,17 @@ export default function App() {
     } finally {
       setDownloadingAll(false);
     }
+  };
+
+  const handleClearAll = () => {
+    setUrl('');
+    setResult('');
+    setError('');
+    setFiles([]);
+    setCopied(false);
+    setSummaryOnlyMode(false);
+    setUseCrawler(false);
+    setDownloadingAll(false);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -209,8 +243,21 @@ export default function App() {
               'Somente Resumo'
             )}
           </Button>
+          <Button variant="outline" onClick={handleClearAll} disabled={loading || loadingSummary}>
+            Limpar Tudo
+          </Button>
         </div>
-
+        <div className="flex items-center gap-2 text-sm text-gray-700">
+          <Checkbox
+            id="use-crawler"
+            checked={useCrawler}
+            onCheckedChange={(val) => setUseCrawler(!!val)}
+            disabled={loading || loadingSummary}
+          />
+          <label htmlFor="use-crawler" className="select-none cursor-pointer">
+            Usar crawler para varrer o dominio inteiro antes de otimizar
+          </label>
+        </div>
         {/* Error Message */}
         {error && (
           <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">

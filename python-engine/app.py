@@ -1,26 +1,46 @@
+import json
 import os
 import re
-import json
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urljoin, urlparse
 
+from dotenv import load_dotenv
 import requests
 from bs4 import BeautifulSoup
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify, request
+
+# Load environment variables from .env if present (before importing modules that read env)
+load_dotenv()
+
+from content_generator import generate_aeo_content
+from browser_fetch import fetch_html_with_playwright, is_bot_challenge, playwright_enabled
+from crawler_async import crawl_site
+from schema_builder import build_schema
 
 
-def fetch_html(target_url: str, timeout: int = 15):
+DEFAULT_REQUEST_TIMEOUT = int(os.getenv("ENGINE_REQUEST_TIMEOUT", "180"))
+
+
+def fetch_html(target_url: str, timeout: int = DEFAULT_REQUEST_TIMEOUT):
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
             "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
         )
     }
-    resp = requests.get(target_url, headers=headers, timeout=timeout, allow_redirects=True)
-    resp.raise_for_status()
-    ctype = resp.headers.get("Content-Type", "").lower()
-    if "text/html" not in ctype and "application/xhtml+xml" not in ctype:
-        raise ValueError(f"Unsupported content type: {ctype}")
-    return resp.text, resp.url
+    try:
+        resp = requests.get(target_url, headers=headers, timeout=timeout, allow_redirects=True)
+        resp.raise_for_status()
+        ctype = resp.headers.get("Content-Type", "").lower()
+        if "text/html" not in ctype and "application/xhtml+xml" not in ctype:
+            raise ValueError(f"Unsupported content type: {ctype}")
+        if is_bot_challenge(resp.text) and playwright_enabled():
+            return fetch_html_with_playwright(target_url, timeout=timeout)
+        return resp.text, resp.url
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code if e.response is not None else None
+        if status in (403, 429) and playwright_enabled():
+            return fetch_html_with_playwright(target_url, timeout=timeout)
+        raise
 
 
 def normalize_url(base: str, link: str) -> str:
@@ -32,7 +52,6 @@ def normalize_url(base: str, link: str) -> str:
 
 def extract_basic(soup: BeautifulSoup):
     title = (soup.title.string or "").strip() if soup.title and soup.title.string else None
-    # Meta description
     desc_tag = soup.find("meta", attrs={"name": "description"})
     description = (desc_tag.get("content") or "").strip() if desc_tag else None
     h1 = [h.get_text(strip=True) for h in soup.find_all("h1")]
@@ -63,7 +82,7 @@ def extract_links(soup: BeautifulSoup, final_url: str):
             internals.append(href)
         else:
             externals.append(href)
-    # Deduplicate and limit
+
     def dedupe(lst):
         seen = set()
         out = []
@@ -84,15 +103,11 @@ def extract_images_issues(soup: BeautifulSoup):
     for img in soup.find_all("img"):
         alt = img.get("alt")
         if alt is None or str(alt).strip() == "":
-            issues.append({
-                "type": "images",
-                "message": "Imagem sem atributo alt",
-            })
+            issues.append({"type": "images", "message": "Imagem sem atributo alt"})
     return issues
 
 
 def extract_structured_data(soup: BeautifulSoup):
-    # Detect common structured data and hreflang/locale for GEO/AEO hints
     ldjson_raw = []
     for s in soup.find_all("script", type=lambda t: t and "ld+json" in t):
         try:
@@ -118,10 +133,8 @@ def extract_structured_data(soup: BeautifulSoup):
         if tag and tag.get("content"):
             geo_meta[name] = tag.get("content")
 
-    # Quick markers
-    has_faq = False
-    has_local_business = False
     types = []
+
     def walk(node):
         if isinstance(node, list):
             for n in node:
@@ -137,17 +150,12 @@ def extract_structured_data(soup: BeautifulSoup):
                 tlist = []
             for tt in tlist:
                 types.append(tt)
-                if tt.lower() == "faqpage":
-                    has_faq = True  # noqa: F841
-                if "localbusiness" in tt.lower():
-                    has_local_business = True  # noqa: F841
             for v in node.values():
                 walk(v)
 
     for d in ldjson_raw:
         walk(d)
 
-    # Re-evaluate booleans after traversal
     has_faq = any(t.lower() == "faqpage" for t in types)
     has_local_business = any("localbusiness" in t.lower() for t in types)
 
@@ -165,9 +173,7 @@ def extract_question_headings(soup: BeautifulSoup):
     q_heads = []
     for tag in soup.find_all(["h1", "h2", "h3"]):
         text = tag.get_text(strip=True)
-        if not text:
-            continue
-        if text.endswith("?"):
+        if text and text.endswith("?"):
             q_heads.append(text)
     return q_heads[:20]
 
@@ -178,12 +184,12 @@ def compute_score(basic, struct, images_issues):
 
     if not basic.get("title"):
         score -= 15
-        issues.append({"type": "meta", "message": "Título ausente"})
+        issues.append({"type": "meta", "message": "Titulo ausente"})
     else:
         tlen = len(basic["title"]) if basic.get("title") else 0
         if tlen < 10 or tlen > 65:
             score -= 5
-            issues.append({"type": "meta", "message": "Comprimento do título não ideal"})
+            issues.append({"type": "meta", "message": "Comprimento do titulo nao ideal"})
 
     if not basic.get("description"):
         score -= 10
@@ -192,75 +198,65 @@ def compute_score(basic, struct, images_issues):
         dlen = basic.get("descriptionLength", 0)
         if dlen < 80 or dlen > 160:
             score -= 5
-            issues.append({"type": "meta", "message": "Comprimento da meta description não ideal"})
+            issues.append({"type": "meta", "message": "Comprimento da meta description nao ideal"})
 
     if not basic.get("h1"):
         score -= 8
         issues.append({"type": "content", "message": "H1 ausente"})
 
-    # H2 usability
     if len(basic.get("h2", [])) < 1:
         score -= 3
-        issues.append({"type": "content", "message": "Poucos subtítulos (H2)"})
+        issues.append({"type": "content", "message": "Poucos subtitulos (H2)"})
 
-    # Image alts
     if images_issues:
         score -= min(10, len(images_issues))
         issues.extend(images_issues)
 
-    # GEO markers
     if not struct.get("hreflang") and not struct.get("ogLocale"):
         score -= 4
-        issues.append({"type": "geo", "message": "Sinal de localização/idioma ausente (hreflang/og:locale)"})
+        issues.append({"type": "geo", "message": "Sinal de localizacao/idioma ausente (hreflang/og:locale)"})
 
     if not struct.get("hasLocalBusiness"):
-        issues.append({"type": "geo", "message": "Schema LocalBusiness não detectado"})
+        issues.append({"type": "geo", "message": "Schema LocalBusiness nao detectado"})
 
-    # AEO markers
     if not struct.get("hasFAQ"):
-        issues.append({"type": "aeo", "message": "Schema FAQPage não detectado"})
+        issues.append({"type": "aeo", "message": "Schema FAQPage nao detectado"})
 
-    # Clamp score
     score = max(0, min(100, score))
     return score, issues
 
 
 def generate_recommendations(url, basic, q_heads):
-    # Title suggestion
     title = basic.get("title") or ""
     if not title:
-        # fall back: hostname-based
         host = urlparse(url).hostname or "Seu Site"
-        title_suggest = f"{host} — Guia Completo e Dicas"
+        title_suggest = f"{host} | Guia completo e dicas"
     else:
         title_suggest = title[:65]
 
-    # Meta description suggestion
     desc = basic.get("description") or ""
     if not desc:
-        # fallback: generic prompt
         desc_suggest = (
-            "Resumo claro do conteúdo da página com foco na intenção do usuário, "
-            "palavras-chave principais e proposta de valor (120–155 caracteres)."
+            "Resumo claro do conteudo da pagina com foco na intencao do usuario, "
+            "palavras-chave principais e proposta de valor (120-155 caracteres)."
         )
     else:
         desc_suggest = desc[:155]
 
-    # AEO suggestions: convert question headings into Q&A outline
     if q_heads:
         faq_lines = ["Perguntas Frequentes:"] + [f"- {q}" for q in q_heads[:6]]
     else:
         faq_lines = [
             "Perguntas Frequentes:",
-            "- O que é este serviço?",
-            "- Quais benefícios principais?",
+            "- O que e este servico?",
+            "- Quais beneficios principais?",
             "- Como funciona o atendimento?",
         ]
 
     optimized = (
-        f"Título sugerido: {title_suggest}\n\n"
+        f"Titulo sugerido: {title_suggest}\n\n"
         f"Meta description sugerida: {desc_suggest}\n\n"
-        "Sugestões AEO (estrutura de respostas/FAQ):\n"
+        "Sugestoes AEO (estrutura de respostas/FAQ):\n"
         + "\n".join(faq_lines)
     )
     return optimized
@@ -268,41 +264,55 @@ def generate_recommendations(url, basic, q_heads):
 
 def build_files(url, basic, links, score, issues):
     files = []
-    files.append({
-        "filename": "summary.json",
-        "mimeType": "application/json",
-        "data": {
-            "url": url,
-            "score": score,
-            "issues": issues,
-        },
-    })
-    files.append({
-        "filename": "headings.json",
-        "mimeType": "application/json",
-        "data": {
-            "title": basic.get("title"),
-            "h1": basic.get("h1", []),
-            "h2": basic.get("h2", []),
-        },
-    })
-    files.append({
-        "filename": "meta.json",
-        "mimeType": "application/json",
-        "data": {
-            "description": basic.get("description"),
-            "descriptionLength": basic.get("descriptionLength", 0),
-        },
-    })
-    files.append({
-        "filename": "links.json",
-        "mimeType": "application/json",
-        "data": {
-            "internal": links.get("internal", []),
-            "external": links.get("external", []),
-        },
-    })
+    files.append(
+        {
+            "filename": "summary.json",
+            "mimeType": "application/json",
+            "data": {
+                "url": url,
+                "score": score,
+                "issues": issues,
+            },
+        }
+    )
+    files.append(
+        {
+            "filename": "headings.json",
+            "mimeType": "application/json",
+            "data": {
+                "title": basic.get("title"),
+                "h1": basic.get("h1", []),
+                "h2": basic.get("h2", []),
+            },
+        }
+    )
+    files.append(
+        {
+            "filename": "meta.json",
+            "mimeType": "application/json",
+            "data": {
+                "description": basic.get("description"),
+                "descriptionLength": basic.get("descriptionLength", 0),
+            },
+        }
+    )
+    files.append(
+        {
+            "filename": "links.json",
+            "mimeType": "application/json",
+            "data": {
+                "internal": links.get("internal", []),
+                "external": links.get("external", []),
+            },
+        }
+    )
     return files
+
+
+def safe_filename(url: str):
+    safe = url.replace("https://", "").replace("http://", "")
+    safe = re.sub(r"[^a-zA-Z0-9\\-_]", "_", safe)
+    return safe[:120] or "pagina"
 
 
 app = Flask(__name__)
@@ -312,10 +322,79 @@ app = Flask(__name__)
 def analyze():
     body = request.get_json(silent=True) or {}
     url = (body.get("url") or "").strip()
+    use_crawler = bool(body.get("useCrawler"))
+
     if not url:
-        return jsonify({"status": "error", "message": "Campo 'url' é obrigatório"}), 400
+        return jsonify({"status": "error", "message": "Campo 'url' e obrigatorio"}), 400
 
     try:
+        if use_crawler:
+            max_pages = int(body.get("maxPages") or 15)
+            max_tasks = int(body.get("maxTasks") or 6)
+            delay = float(body.get("delay") or 0.4)
+            timeout = int(body.get("timeout") or DEFAULT_REQUEST_TIMEOUT)
+
+            pages = crawl_site(url, max_pages=max_pages, max_tasks=max_tasks, delay=delay, timeout=timeout)
+            results = []
+            files = []
+            for page in pages:
+                aeo = generate_aeo_content(page)
+                schema_json = build_schema(aeo, page)
+                safe = safe_filename(page.get("url", url))
+                results.append(
+                    {
+                        "url": page.get("url"),
+                        "title": page.get("title"),
+                        "h1": page.get("h1"),
+                        "markdown": aeo.get("markdown"),
+                        "schema": json.loads(schema_json),
+                    }
+                )
+                files.append(
+                    {
+                        "filename": f"{safe}.md",
+                        "mimeType": "text/markdown",
+                        "data": aeo.get("markdown"),
+                    }
+                )
+                files.append(
+                    {
+                        "filename": f"{safe}.json",
+                        "mimeType": "application/json",
+                        "data": json.loads(schema_json),
+                    }
+                )
+
+            if results:
+                primary = results[0]
+                basic = {
+                    "title": primary.get("title"),
+                    "description": None,
+                    "descriptionLength": 0,
+                    "h1": [primary.get("h1")] if primary.get("h1") else [],
+                    "h2": [],
+                }
+                struct = {
+                    "hreflang": [],
+                    "ogLocale": None,
+                    "geoMeta": {},
+                    "hasFAQ": False,
+                    "hasLocalBusiness": False,
+                }
+                score, issues = compute_score(basic, struct, [])
+                files.extend(build_files(primary.get("url") or url, basic, {"internal": [], "external": []}, score, issues))
+
+            return jsonify(
+                {
+                    "analyzedUrl": url,
+                    "mode": "crawler",
+                    "pagesProcessed": len(results),
+                    "optimizedContent": "\n\n".join([r.get("markdown", "") for r in results]),
+                    "files": files,
+                    "pages": results,
+                }
+            )
+
         html, final_url = fetch_html(url)
         soup = BeautifulSoup(html, "html.parser")
 
@@ -328,20 +407,22 @@ def analyze():
 
         optimized_content = generate_recommendations(final_url, basic, q_heads)
         summary_text = (
-            f"Análise concluída para {final_url}. "
-            f"Título {'presente' if basic.get('title') else 'ausente'}, "
+            f"Analise concluida para {final_url}. "
+            f"Titulo {'presente' if basic.get('title') else 'ausente'}, "
             f"meta description {'presente' if basic.get('description') else 'ausente'}, "
             f"{len(basic.get('h2', []))} H2 encontrados. Score: {score}."
         )
 
         files = build_files(final_url, basic, links, score, issues)
 
-        return jsonify({
-            "analyzedUrl": final_url,
-            "summary": summary_text,
-            "optimizedContent": optimized_content,
-            "files": files,
-        })
+        return jsonify(
+            {
+                "analyzedUrl": final_url,
+                "summary": summary_text,
+                "optimizedContent": optimized_content,
+                "files": files,
+            }
+        )
 
     except requests.exceptions.RequestException as e:
         return jsonify({"status": "error", "message": f"Falha ao buscar URL: {str(e)}"}), 502
@@ -352,4 +433,3 @@ def analyze():
 if __name__ == "__main__":
     port = int(os.getenv("ENGINE_PORT", "5000"))
     app.run(host="0.0.0.0", port=port)
-
