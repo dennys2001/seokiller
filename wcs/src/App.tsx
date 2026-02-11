@@ -21,15 +21,7 @@ export default function App() {
 
   // API URL via Vite env (middleware). Default to same-origin path using Vite proxy in dev
   const API_URL = import.meta.env.VITE_API_URL || '/avalie';
-  const WCE_KEY = import.meta.env.VITE_WCE_KEY || '';
-
-  const buildHeaders = () => {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (WCE_KEY) {
-      headers['x-wce-key'] = WCE_KEY;
-    }
-    return headers;
-  };
+  const buildHeaders = () => ({ 'Content-Type': 'application/json' });
 
   const fetchWithTimeout = async (input: RequestInfo, init?: RequestInit) => {
     const controller = new AbortController();
