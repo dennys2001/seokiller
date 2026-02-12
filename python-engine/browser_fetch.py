@@ -13,12 +13,33 @@ CHALLENGE_MARKERS = (
     "attention required",
     "captcha",
     "verify you are human",
+    "executando verificação de segurança",
+    "verificacao de seguranca",
+    "checking your browser",
+)
+
+MAINTENANCE_MARKERS = (
+    "site maintenance",
+    "temporarily unavailable",
+    "service unavailable",
+    "oops! something went wrong",
+    "we'll be back soon",
+    "503 service unavailable",
 )
 
 
 def is_bot_challenge(html: str) -> bool:
     text = (html or "").lower()
     return any(marker in text for marker in CHALLENGE_MARKERS)
+
+
+def is_maintenance_page(html: str) -> bool:
+    text = (html or "").lower()
+    return any(marker in text for marker in MAINTENANCE_MARKERS)
+
+
+def is_unusable_page(html: str) -> bool:
+    return is_bot_challenge(html) or is_maintenance_page(html)
 
 
 def playwright_enabled() -> bool:

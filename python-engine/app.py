@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request
 load_dotenv()
 
 from content_generator import generate_aeo_content
-from browser_fetch import fetch_html_with_playwright, is_bot_challenge, playwright_enabled
+from browser_fetch import fetch_html_with_playwright, is_unusable_page, playwright_enabled
 from crawler_async import crawl_site
 from schema_builder import build_schema
 
@@ -33,13 +33,21 @@ def fetch_html(target_url: str, timeout: int = DEFAULT_REQUEST_TIMEOUT):
         ctype = resp.headers.get("Content-Type", "").lower()
         if "text/html" not in ctype and "application/xhtml+xml" not in ctype:
             raise ValueError(f"Unsupported content type: {ctype}")
-        if is_bot_challenge(resp.text) and playwright_enabled():
-            return fetch_html_with_playwright(target_url, timeout=timeout)
+        if is_unusable_page(resp.text):
+            if playwright_enabled():
+                html, final_url = fetch_html_with_playwright(target_url, timeout=timeout)
+                if is_unusable_page(html):
+                    raise ValueError("Conteudo bloqueado por anti-bot ou pagina de manutencao")
+                return html, final_url
+            raise ValueError("Conteudo bloqueado por anti-bot ou pagina de manutencao")
         return resp.text, resp.url
     except requests.exceptions.HTTPError as e:
         status = e.response.status_code if e.response is not None else None
         if status in (403, 429) and playwright_enabled():
-            return fetch_html_with_playwright(target_url, timeout=timeout)
+            html, final_url = fetch_html_with_playwright(target_url, timeout=timeout)
+            if is_unusable_page(html):
+                raise ValueError("Conteudo bloqueado por anti-bot ou pagina de manutencao")
+            return html, final_url
         raise
 
 
@@ -365,6 +373,14 @@ def analyze():
                     }
                 )
 
+            if not results:
+                return jsonify(
+                    {
+                        "status": "error",
+                        "message": "Crawler nao encontrou paginas validas. O alvo pode estar bloqueando bots ou em manutencao.",
+                    }
+                ), 502
+
             if results:
                 primary = results[0]
                 basic = {
@@ -426,6 +442,8 @@ def analyze():
 
     except requests.exceptions.RequestException as e:
         return jsonify({"status": "error", "message": f"Falha ao buscar URL: {str(e)}"}), 502
+    except ValueError as e:
+        return jsonify({"status": "error", "message": str(e)}), 502
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
