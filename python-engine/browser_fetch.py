@@ -13,7 +13,7 @@ CHALLENGE_MARKERS = (
     "attention required",
     "captcha",
     "verify you are human",
-    "executando verificação de segurança",
+    "executando verificacao de seguranca",
     "verificacao de seguranca",
     "checking your browser",
 )
@@ -50,8 +50,8 @@ def fetch_html_with_playwright(url: str, timeout: int = 120):
     from playwright.sync_api import sync_playwright
 
     timeout_ms = max(1, int(timeout)) * 1000
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True, args=["--no-sandbox"])
         context = browser.new_context(
             user_agent=DEFAULT_BROWSER_UA,
             locale="pt-BR",

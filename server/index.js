@@ -155,7 +155,52 @@ app.post('/avalie', async (req, res) => {
       clearTimeout(timeoutId);
     }
 
-    const { json: data, raw } = await readEnginePayload(response);
+    let { json: data, raw } = await readEnginePayload(response);
+
+    // If crawler fails (common on anti-bot / maintenance), do not break the UI.
+    // Fallback to non-crawler analysis and attach a warning.
+    if (!response.ok && useCrawler) {
+      const errText =
+        (data && typeof data === 'object' && data.message ? String(data.message) : String(raw || '')).toLowerCase();
+      const looksBlocked =
+        errText.includes('anti-bot') ||
+        errText.includes('captcha') ||
+        errText.includes('manut') ||
+        errText.includes('bloque') ||
+        response.status === 403 ||
+        response.status === 429 ||
+        response.status === 502 ||
+        response.status === 504;
+
+      if (looksBlocked) {
+        console.warn('[middleware] Crawler failed; retrying engine without crawler (summary fallback).');
+
+        const fallbackController = new AbortController();
+        const fallbackTimeoutId = setTimeout(() => fallbackController.abort(), ENGINE_TIMEOUT_MS);
+        let fallbackResp;
+        try {
+          fallbackResp = await fetch(ENGINE_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: normalizedUrl, useCrawler: false }),
+            signal: fallbackController.signal,
+          });
+        } finally {
+          clearTimeout(fallbackTimeoutId);
+        }
+
+        const fallbackPayload = await readEnginePayload(fallbackResp);
+        if (fallbackResp.ok && fallbackPayload.json && typeof fallbackPayload.json === 'object') {
+          response = fallbackResp;
+          data = fallbackPayload.json;
+          raw = fallbackPayload.raw;
+          data.warning =
+            data.warning ||
+            'Site protegido por anti-bot ou em manutencao. Nao foi possivel realizar analise completa com crawler; exibindo somente resumo.';
+          data.mode = data.mode || 'crawler_fallback_summary';
+        }
+      }
+    }
 
     if (!response.ok) {
       const status =

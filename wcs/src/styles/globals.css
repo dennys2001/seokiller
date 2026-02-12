@@ -10,3 +10,36 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer components {
+  /* Hard layout rails: always centered horizontally, stable across states. */
+  .page {
+    min-height: 100vh;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    background: #fff;
+  }
+
+  .page--home {
+    align-items: center;
+  }
+
+  .page--results {
+    align-items: flex-start;
+    padding: 40px 0;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 1040px;
+    margin: 0 auto;
+    padding: 24px 16px;
+  }
+
+  @media (min-width: 640px) {
+    .container {
+      padding: 32px 24px;
+    }
+  }
+}

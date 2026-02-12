@@ -117,7 +117,7 @@ class AsyncCrawler:
             ps = soup.find_all("p")
             text = " ".join([p.get_text(separator=" ", strip=True) for p in ps])
         text = " ".join(text.split())[:10000]
-        return {"url": url, "title": title, "h1": h1, "text": text}
+        return {"url": url, "title": title, "h1": h1, "text": text, "html": html}
 
     async def worker(self):
         while not self.to_crawl.empty() and len(self.results) < self.max_pages:
