@@ -46,6 +46,14 @@ const trimUrl = (value) =>
   typeof value === 'string' ? value.trim() : '';
 
 const isHttpUrl = (value) => /^https?:\/\//i.test(value);
+const asPositiveInt = (value) => {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+const asPositiveNumber = (value) => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
 
 async function readEnginePayload(response) {
   const raw = await response.text();
@@ -120,10 +128,20 @@ app.post('/avalie', async (req, res) => {
       ENGINE_TIMEOUT_MS
     );
 
-    const payload = {
-      url: normalizedUrl,
-      useCrawler: !!req.body?.useCrawler,
-    };
+    const useCrawler = !!req.body?.useCrawler;
+    const payload = { url: normalizedUrl, useCrawler };
+
+    // Forward crawler tunables when provided by the client.
+    if (useCrawler) {
+      const maxPages = asPositiveInt(req.body?.maxPages);
+      const maxTasks = asPositiveInt(req.body?.maxTasks);
+      const timeout = asPositiveInt(req.body?.timeout);
+      const delay = asPositiveNumber(req.body?.delay);
+      if (maxPages !== null) payload.maxPages = maxPages;
+      if (maxTasks !== null) payload.maxTasks = maxTasks;
+      if (timeout !== null) payload.timeout = timeout;
+      if (delay !== null) payload.delay = delay;
+    }
 
     let response;
     try {
@@ -137,7 +155,52 @@ app.post('/avalie', async (req, res) => {
       clearTimeout(timeoutId);
     }
 
-    const { json: data, raw } = await readEnginePayload(response);
+    let { json: data, raw } = await readEnginePayload(response);
+
+    // If crawler fails (common on anti-bot / maintenance), do not break the UI.
+    // Fallback to non-crawler analysis and attach a warning.
+    if (!response.ok && useCrawler) {
+      const errText =
+        (data && typeof data === 'object' && data.message ? String(data.message) : String(raw || '')).toLowerCase();
+      const looksBlocked =
+        errText.includes('anti-bot') ||
+        errText.includes('captcha') ||
+        errText.includes('manut') ||
+        errText.includes('bloque') ||
+        response.status === 403 ||
+        response.status === 429 ||
+        response.status === 502 ||
+        response.status === 504;
+
+      if (looksBlocked) {
+        console.warn('[middleware] Crawler failed; retrying engine without crawler (summary fallback).');
+
+        const fallbackController = new AbortController();
+        const fallbackTimeoutId = setTimeout(() => fallbackController.abort(), ENGINE_TIMEOUT_MS);
+        let fallbackResp;
+        try {
+          fallbackResp = await fetch(ENGINE_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: normalizedUrl, useCrawler: false }),
+            signal: fallbackController.signal,
+          });
+        } finally {
+          clearTimeout(fallbackTimeoutId);
+        }
+
+        const fallbackPayload = await readEnginePayload(fallbackResp);
+        if (fallbackResp.ok && fallbackPayload.json && typeof fallbackPayload.json === 'object') {
+          response = fallbackResp;
+          data = fallbackPayload.json;
+          raw = fallbackPayload.raw;
+          data.warning =
+            data.warning ||
+            'Site protegido por anti-bot ou em manutencao. Nao foi possivel realizar analise completa com crawler; exibindo somente resumo.';
+          data.mode = data.mode || 'crawler_fallback_summary';
+        }
+      }
+    }
 
     if (!response.ok) {
       const status =

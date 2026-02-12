@@ -13,12 +13,33 @@ CHALLENGE_MARKERS = (
     "attention required",
     "captcha",
     "verify you are human",
+    "executando verificacao de seguranca",
+    "verificacao de seguranca",
+    "checking your browser",
+)
+
+MAINTENANCE_MARKERS = (
+    "site maintenance",
+    "temporarily unavailable",
+    "service unavailable",
+    "oops! something went wrong",
+    "we'll be back soon",
+    "503 service unavailable",
 )
 
 
 def is_bot_challenge(html: str) -> bool:
     text = (html or "").lower()
     return any(marker in text for marker in CHALLENGE_MARKERS)
+
+
+def is_maintenance_page(html: str) -> bool:
+    text = (html or "").lower()
+    return any(marker in text for marker in MAINTENANCE_MARKERS)
+
+
+def is_unusable_page(html: str) -> bool:
+    return is_bot_challenge(html) or is_maintenance_page(html)
 
 
 def playwright_enabled() -> bool:
@@ -29,8 +50,8 @@ def fetch_html_with_playwright(url: str, timeout: int = 120):
     from playwright.sync_api import sync_playwright
 
     timeout_ms = max(1, int(timeout)) * 1000
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True, args=["--no-sandbox"])
         context = browser.new_context(
             user_agent=DEFAULT_BROWSER_UA,
             locale="pt-BR",

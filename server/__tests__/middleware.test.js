@@ -4,6 +4,13 @@ describe('Middleware /avalie', () => {
   let engineServer;
   let app;
   let engineUrl;
+  const sharedKey = 'test-key';
+
+  const authorizedAvalieRequest = (origin, query = '') =>
+    request(app)
+      .post(`/avalie${query}`)
+      .set('Origin', origin)
+      .set('x-wce-key', sharedKey);
 
   beforeAll(async () => {
     // Start fake engine on ephemeral port
@@ -17,6 +24,7 @@ describe('Middleware /avalie', () => {
     // Configure middleware env before requiring it
     process.env.ENGINE_URL = engineUrl;
     process.env.CORS_ORIGIN = 'http://localhost:5173';
+    process.env.WCE_SHARED_KEY = sharedKey;
 
     ({ app } = require('../index'));
   });
@@ -28,9 +36,7 @@ describe('Middleware /avalie', () => {
   });
 
   test('returns normalized JSON with files', async () => {
-    const res = await request(app)
-      .post('/avalie')
-      .set('Origin', 'http://localhost:5173')
+    const res = await authorizedAvalieRequest('http://localhost:5173')
       .send({ url: 'https://example.com' });
 
     expect(res.status).toBe(200);
@@ -42,9 +48,7 @@ describe('Middleware /avalie', () => {
   });
 
   test('streams a zip when zip=1', async () => {
-    const res = await request(app)
-      .post('/avalie?zip=1')
-      .set('Origin', 'http://localhost:5173')
+    const res = await authorizedAvalieRequest('http://localhost:5173', '?zip=1')
       .send({ url: 'https://example.com' });
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/application\/zip/);
@@ -57,15 +61,11 @@ describe('Middleware /avalie', () => {
   });
 
   test('CORS header present for allowed origin and absent for blocked', async () => {
-    const allowed = await request(app)
-      .post('/avalie')
-      .set('Origin', 'http://localhost:5173')
+    const allowed = await authorizedAvalieRequest('http://localhost:5173')
       .send({ url: 'https://example.com' });
     expect(allowed.headers['access-control-allow-origin']).toBe('http://localhost:5173');
 
-    const blocked = await request(app)
-      .post('/avalie')
-      .set('Origin', 'http://malicious.local')
+    const blocked = await authorizedAvalieRequest('http://malicious.local')
       .send({ url: 'https://example.com' });
     expect(blocked.headers['access-control-allow-origin']).toBeUndefined();
   });

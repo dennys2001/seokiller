@@ -6,7 +6,7 @@ from urllib.robotparser import RobotFileParser
 import aiohttp
 from aiohttp import ClientTimeout
 from bs4 import BeautifulSoup
-from browser_fetch import fetch_html_with_playwright, is_bot_challenge, playwright_enabled
+from browser_fetch import fetch_html_with_playwright, is_unusable_page, playwright_enabled
 
 DEFAULT_HEADERS = {
     "User-Agent": "GEO-AEO-Bot/1.0 (+https://your-agency.example)"
@@ -71,7 +71,7 @@ class AsyncCrawler:
                         if resp.status in (403, 429):
                             return await self._fetch_with_playwright(url)
                         return None
-                    if is_bot_challenge(text):
+                    if is_unusable_page(text):
                         return await self._fetch_with_playwright(url)
                     await asyncio.sleep(self.delay)
                     return text
@@ -86,6 +86,8 @@ class AsyncCrawler:
         self.playwright_fallback_count += 1
         try:
             html, _ = await asyncio.to_thread(fetch_html_with_playwright, url, self.timeout)
+            if is_unusable_page(html):
+                return None
             return html
         except Exception:
             return None
@@ -115,7 +117,7 @@ class AsyncCrawler:
             ps = soup.find_all("p")
             text = " ".join([p.get_text(separator=" ", strip=True) for p in ps])
         text = " ".join(text.split())[:10000]
-        return {"url": url, "title": title, "h1": h1, "text": text}
+        return {"url": url, "title": title, "h1": h1, "text": text, "html": html}
 
     async def worker(self):
         while not self.to_crawl.empty() and len(self.results) < self.max_pages:

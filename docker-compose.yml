@@ -32,5 +32,8 @@ services:
         VITE_WCE_KEY: ${WCE_SHARED_KEY:-super-secret-key}
     depends_on:
       - server
+    environment:
+      WCS_BACKEND_URL: http://server:3001/avalie
+      WCS_SHARED_KEY: ${WCE_SHARED_KEY:-super-secret-key}
     ports:
       - "4173:80"
