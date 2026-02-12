@@ -46,6 +46,14 @@ const trimUrl = (value) =>
   typeof value === 'string' ? value.trim() : '';
 
 const isHttpUrl = (value) => /^https?:\/\//i.test(value);
+const asPositiveInt = (value) => {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+const asPositiveNumber = (value) => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
 
 async function readEnginePayload(response) {
   const raw = await response.text();
@@ -120,10 +128,20 @@ app.post('/avalie', async (req, res) => {
       ENGINE_TIMEOUT_MS
     );
 
-    const payload = {
-      url: normalizedUrl,
-      useCrawler: !!req.body?.useCrawler,
-    };
+    const useCrawler = !!req.body?.useCrawler;
+    const payload = { url: normalizedUrl, useCrawler };
+
+    // Forward crawler tunables when provided by the client.
+    if (useCrawler) {
+      const maxPages = asPositiveInt(req.body?.maxPages);
+      const maxTasks = asPositiveInt(req.body?.maxTasks);
+      const timeout = asPositiveInt(req.body?.timeout);
+      const delay = asPositiveNumber(req.body?.delay);
+      if (maxPages !== null) payload.maxPages = maxPages;
+      if (maxTasks !== null) payload.maxTasks = maxTasks;
+      if (timeout !== null) payload.timeout = timeout;
+      if (delay !== null) payload.delay = delay;
+    }
 
     let response;
     try {
